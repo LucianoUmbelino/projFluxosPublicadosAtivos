@@ -1,72 +1,90 @@
-
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.chart import BarChart, Reference
-from datetime import datetime
+from openpyxl.chart import LineChart, Reference
+from openpyxl.chart.label import DataLabelList
+from config.settings import CAMINHO_PLANILHA_FINAL
 
-# === VARIÁVEIS ===
-caminho_planilha_final = r'C:\Projects\SEGER-GPP\E-Flow - Fluxos\Fluxos_Publicados_Ativos.xlsx'
-nomes_meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-               "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+# Mapeamento de nomes completos para siglas
+mapa_siglas = {
+    "Janeiro": "Jan", "Fevereiro": "Fev", "Março": "Mar", "Abril": "Abr",
+    "Maio": "Mai", "Junho": "Jun", "Julho": "Jul", "Agosto": "Ago",
+    "Setembro": "Set", "Outubro": "Out", "Novembro": "Nov", "Dezembro": "Dez"
+}
+ordem_meses = list(mapa_siglas.values())
 
-# === ABRIR PLANILHA DE DESTINO ===
-wb = load_workbook(caminho_planilha_final)
+def gerar_graficos_gerais():
+    wb = load_workbook(CAMINHO_PLANILHA_FINAL)
 
-# === COLETAR DADOS DE CADA ABA MENSAL ===
-registros = []
-for nome in wb.sheetnames:
-    if nome in nomes_meses:
-        aba = wb[nome]
-        linha = 7
-        while True:
-            patriarca = aba[f"A{linha}"].value
-            quantidade = aba[f"C{linha}"].value
-            if not patriarca:
-                break
-            quantidade_valida = int(quantidade) if quantidade is not None else 0
-            registros.append({
-                "Mês": nome,
-                "Patriarca": patriarca,
-                "Quantidade": quantidade_valida
-            })
-            linha += 1
+    # Coletar dados das abas mensais
+    registros = []
+    for nome in wb.sheetnames:
+        if nome in mapa_siglas:
+            aba = wb[nome]
+            linha = 7
+            while True:
+                patriarca = aba[f"A{linha}"].value
+                quantidade = aba[f"C{linha}"].value
+                if not patriarca:
+                    break
+                quantidade_valida = int(quantidade) if quantidade is not None else 0
+                registros.append({
+                    "Mês": mapa_siglas[nome],
+                    "Patriarca": patriarca,
+                    "Quantidade": quantidade_valida
+                })
+                linha += 1
 
-if not registros:
-    raise ValueError("Nenhum dado encontrado nas abas mensais.")
+    if not registros:
+        raise ValueError("Nenhum dado encontrado nas abas mensais.")
 
-df = pd.DataFrame(registros)
+    df = pd.DataFrame(registros)
 
-# === REMOVER ABA DE GRÁFICO ANTIGA SE EXISTIR ===
-if "Graficos" in wb.sheetnames:
-    del wb["Graficos"]
+    # Remover aba antiga de gráficos
+    if "Graficos" in wb.sheetnames:
+        del wb["Graficos"]
+    aba_graf = wb.create_sheet("Graficos")
 
-aba_graf = wb.create_sheet("Graficos")
+    # Criar aba de dados para o gráfico
+    if "Dados para o Gráfico" in wb.sheetnames:
+        del wb["Dados para o Gráfico"]
+    aba_dados = wb.create_sheet("Dados para o Gráfico")
 
-# === TABELA PIVOT: LINHAS = MÊS, COLUNAS = PATRIARCA ===
-df_pivot = df.pivot_table(index="Mês", columns="Patriarca", values="Quantidade", aggfunc="sum", fill_value=0)
-df_pivot = df_pivot.sort_index()
+    # Total por mês com todos os meses do ano
+    totais_mes = df.groupby("Mês")["Quantidade"].sum().reindex(ordem_meses, fill_value=0)
 
-# === ESCREVER TABELA NA PLANILHA ===
-aba_graf.append(["Mês"] + list(df_pivot.columns))
-for mes, row in df_pivot.iterrows():
-    aba_graf.append([mes] + list(row.values))
+    # Escrever dados na aba de dados
+    aba_dados.append(["Mês", "Total"])
+    for mes, total in totais_mes.items():
+        aba_dados.append([mes, total])
 
-# === CRIAR GRÁFICO DE BARRAS AGRUPADAS ===
-chart = BarChart()
-chart.type = "col"
-chart.title = "Total de Fluxos Publicados por Patriarca por Mês"
-chart.x_axis.title = "Mês"
-chart.y_axis.title = "Total de Fluxos"
+    # Determinar intervalo de meses com dados
+    meses_com_dados = totais_mes[totais_mes > 0]
+    if not meses_com_dados.empty:
+        primeiro_indice = ordem_meses.index(meses_com_dados.index[0])
+        ultimo_indice = ordem_meses.index(meses_com_dados.index[-1])
+    else:
+        primeiro_indice = 0
+        ultimo_indice = 11
 
-ncols = len(df_pivot.columns)
-nrows = len(df_pivot.index)
+    # Gráfico de linha
+    chart = LineChart()
+    chart.title = "Total de Fluxos Publicados por Mês"
+    chart.y_axis.title = "Total"
+    chart.x_axis.title = "Mês"
+    chart.y_axis.majorUnit = 50
+    chart.y_axis.minorGridlines = None
 
-data = Reference(aba_graf, min_col=2, min_row=1, max_col=1 + ncols, max_row=1 + nrows)
-cats = Reference(aba_graf, min_col=1, min_row=2, max_row=1 + nrows)
-chart.add_data(data, titles_from_data=True)
-chart.set_categories(cats)
+    data = Reference(aba_dados, min_col=2, min_row=1 + primeiro_indice + 1, max_row=1 + ultimo_indice + 1)
+    cats = Reference(aba_dados, min_col=1, min_row=1 + primeiro_indice + 1, max_row=1 + ultimo_indice + 1)
+    chart.add_data(data, titles_from_data=False)
+    chart.set_categories(cats)
 
-aba_graf.add_chart(chart, "B8")
+    # Adicionar rótulos de dados
+    chart.dLbls = DataLabelList()
+    chart.dLbls.showVal = True
 
-wb.save(caminho_planilha_final)
-print("✅ Aba 'Graficos' criada com sucesso com base nas abas mensais.")
+    aba_graf.add_chart(chart, "B2")
+
+    wb.save(CAMINHO_PLANILHA_FINAL)
+    print("✅ Aba 'Graficos' e 'Dados para o Gráfico' criadas com sucesso com gráfico de linha ajustado.")
+

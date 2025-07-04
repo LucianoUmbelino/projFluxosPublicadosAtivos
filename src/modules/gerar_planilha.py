@@ -1,80 +1,96 @@
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
-from openpyxl.chart import BarChart, Reference
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import PatternFill, Alignment
 from datetime import datetime
+from config.settings import CAMINHO_PLANILHA_FINAL, ABA_MODELO
+from utils.excel_helpers import ajustar_largura_colunas
 
-# === VARIÁVEIS ===
-mes = "Junho"
 
-caminho_fluxos = r'C:\Projects\SEGER-GPP\E-Flow - Fluxos\Fluxos disponíveis para execução no E-Flow (produção) (2025-06-03).xlsx'
-caminho_planilha_final = r'C:\Projects\SEGER-GPP\E-Flow - Fluxos\Fluxos_Publicados_Ativos.xlsx'
+def padronizar_coluna_nome(df):
+    if "Nome" in df.columns:
+        return df
+    elif "Nomes" in df.columns:
+        return df.rename(columns={"Nomes": "Nome"})
+    else:
+        raise ValueError("A planilha deve conter a coluna 'Nome' ou 'Nomes'.")
 
-# === LEITURA DA PLANILHA DE FLUXOS ===
-df = pd.read_excel(caminho_fluxos)
 
-# Verifica se as colunas necessárias existem
-if "Patriarca" not in df.columns or "Órgão" not in df.columns or "Nomes" not in df.columns:
-    raise ValueError("A planilha deve conter as colunas 'Patriarca', 'Órgão' e 'Nomes'.")
+def gerar_fluxo_mensal(mes: str, caminho_fluxos: str):
+    # === LEITURA DA PLANILHA DE FLUXOS ===
+    df = pd.read_excel(caminho_fluxos, engine="openpyxl")
+    df = padronizar_coluna_nome(df)
 
-# Remove linhas com valores nulos nas colunas necessárias
-df = df.dropna(subset=["Patriarca", "Órgão", "Nomes"])
+    colunas_necessarias = ["Patriarca", "Órgão", "Nome"]
+    if not all(col in df.columns for col in colunas_necessarias):
+        raise ValueError("A planilha deve conter as colunas 'Patriarca', 'Órgão' e 'Nome'.")
 
-# Agrupa e conta todas as ocorrências por setor
-df_resumo = df.groupby(["Patriarca", "Órgão"])["Nomes"].count().reset_index()
-df_resumo.columns = ["Patriarca", "Setor", "Quantidade"]
-df_resumo = df_resumo.sort_values(by=["Patriarca", "Setor"])
+    df = df.dropna(subset=colunas_necessarias)
 
-# === ABRIR A PLANILHA DE DESTINO ===
-wb = load_workbook(caminho_planilha_final)
+    df_resumo = df.groupby(["Patriarca", "Órgão"])["Nome"].count().reset_index()
+    df_resumo.columns = ["Patriarca", "Setor", "Quantidade"]
+    df_resumo = df_resumo.sort_values(by=["Patriarca", "Setor"])
 
-# Verifica se aba "Abril" existe para usar como modelo
-if "Abril" not in wb.sheetnames:
-    raise ValueError("A planilha deve conter uma aba chamada 'Abril' como modelo.")
+    # === ABRIR A PLANILHA DE DESTINO ===
+    wb = load_workbook(CAMINHO_PLANILHA_FINAL)
 
-# Verifica se a aba do mês existe
-if mes in wb.sheetnames:
-    # Exclui a aba existente
-    del wb[mes]
+    if ABA_MODELO not in wb.sheetnames:
+        raise ValueError(f"A planilha deve conter uma aba chamada '{ABA_MODELO}' como modelo.")
 
-# Copia a aba modelo
-aba_modelo: Worksheet = wb["Maio"]
-nova_aba: Worksheet = wb.copy_worksheet(aba_modelo)
-nova_aba.title = mes
+    if mes in wb.sheetnames:
+        del wb[mes]
 
-# Atualiza cabeçalhos
-nova_aba["A4"] = f"Contagem de Fluxos Publicados e Ativos por Setor - Mês {mes}"
-nova_aba["A5"] = f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-nova_aba["A6"] = "Patriarca"
-nova_aba["B6"] = "Setor"
-nova_aba["C6"] = "Quantidade"
-nova_aba["E6"] = "Total"
+    aba_modelo: Worksheet = wb[ABA_MODELO]
+    nova_aba: Worksheet = wb.copy_worksheet(aba_modelo)
+    nova_aba.title = mes
 
-# Remove dados anteriores
-for row in nova_aba.iter_rows(min_row=7, max_row=nova_aba.max_row, min_col=1, max_col=5):
-    for cell in row:
-        cell.value = None
+    # Inserir nova aba antes da aba "Graficos", se existir
+    if "Graficos" in wb.sheetnames:
+        idx_graficos = wb.sheetnames.index("Graficos")
+        wb._sheets.remove(nova_aba)
+        wb._sheets.insert(idx_graficos, nova_aba)
 
-# Preenche dados a partir da linha 7
-linha = 7
-for _, row in df_resumo.iterrows():
-    nova_aba[f"A{linha}"] = row["Patriarca"]
-    nova_aba[f"B{linha}"] = row["Setor"]
-    nova_aba[f"C{linha}"] = row["Quantidade"]
-    linha += 1
+    # Atualiza cabeçalhos
+    nova_aba["A4"] = f"Contagem de Fluxos Publicados e Ativos por Setor - Mês {mes}"
+    nova_aba["A5"] = f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    nova_aba["A6"] = "Patriarca"
+    nova_aba["B6"] = "Setor"
+    nova_aba["C6"] = "Quantidade"
+    nova_aba["E6"] = "Total"
 
-# Soma total na coluna E
-nova_aba["E7"] = f"=SUM(C7:C{linha-1})"
+    # Remove dados anteriores
+    for row in nova_aba.iter_rows(min_row=7, max_row=nova_aba.max_row, min_col=1, max_col=5):
+        for cell in row:
+            cell.value = None
 
-# Ajusta a largura das colunas A, B e C de acordo com o maior conteúdo
-for col in ['A', 'B', 'C']:
-    max_length = 0
-    for cell in nova_aba[col]:
-        if cell.value:
-            max_length = max(max_length, len(str(cell.value)))
-    nova_aba.column_dimensions[col].width = max_length + 2
+    # Estilos base
+    fill_branco = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    fill_azul = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+    alinhamento_esquerda = Alignment(horizontal="left")
 
-# === SALVA O ARQUIVO ===
-wb.save(caminho_planilha_final)
-print(f"Aba '{mes}' criada/atualizada com sucesso no arquivo:\\n{caminho_planilha_final}")
+    # Preenche dados a partir da linha 7
+    linha = 7
+    for i, (_, row) in enumerate(df_resumo.iterrows()):
+        cor = fill_branco if i % 2 == 0 else fill_azul
+        nova_aba[f"A{linha}"] = row["Patriarca"]
+        nova_aba[f"B{linha}"] = row["Setor"]
+        nova_aba[f"C{linha}"] = row["Quantidade"]
+
+        for col in ["A", "B", "C"]:
+            cell = nova_aba[f"{col}{linha}"]
+            cell.fill = cor
+            if col == "B":
+                cell.alignment = alinhamento_esquerda
+
+        linha += 1
+
+    # Soma total na coluna E
+    nova_aba["E7"] = f"=SUM(C7:C{linha-1})"
+
+    # Ajusta largura das colunas
+    ajustar_largura_colunas(nova_aba, colunas=["A", "B", "C"])
+
+    # Salva
+    wb.save(CAMINHO_PLANILHA_FINAL)
+    print(f"✅ Aba '{mes}' criada/atualizada com sucesso no arquivo:\n{CAMINHO_PLANILHA_FINAL}")
+
