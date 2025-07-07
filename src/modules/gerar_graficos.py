@@ -1,7 +1,9 @@
 import pandas as pd
+import matplotlib.pyplot as plt
 from openpyxl import load_workbook
-from openpyxl.chart import LineChart, Reference
-from openpyxl.chart.label import DataLabelList
+from openpyxl.drawing.image import Image as XLImage
+from io import BytesIO
+from datetime import datetime
 from config.settings import CAMINHO_PLANILHA_FINAL
 
 # Mapeamento de nomes completos para siglas
@@ -10,81 +12,55 @@ mapa_siglas = {
     "Maio": "Mai", "Junho": "Jun", "Julho": "Jul", "Agosto": "Ago",
     "Setembro": "Set", "Outubro": "Out", "Novembro": "Nov", "Dezembro": "Dez"
 }
+meses = list(mapa_siglas.keys())
 ordem_meses = list(mapa_siglas.values())
 
-def gerar_graficos_gerais():
-    wb = load_workbook(CAMINHO_PLANILHA_FINAL)
+def gerar_grafico_linha_evolucao_mensal_de_Fluxos_publicados(caminho_arquivo: str):
+    # Inicializa a lista final
+    fluxos_publicados = []
 
-    # Coletar dados das abas mensais
-    registros = []
-    for nome in wb.sheetnames:
-        if nome in mapa_siglas:
-            aba = wb[nome]
-            linha = 7
-            while True:
-                patriarca = aba[f"A{linha}"].value
-                quantidade = aba[f"C{linha}"].value
-                if not patriarca:
-                    break
-                quantidade_valida = int(quantidade) if quantidade is not None else 0
-                registros.append({
-                    "Mês": mapa_siglas[nome],
-                    "Patriarca": patriarca,
-                    "Quantidade": quantidade_valida
-                })
-                linha += 1
+    # Lê a estrutura da planilha
+    excel_file = pd.ExcelFile(caminho_arquivo)
+    abas = excel_file.sheet_names
 
-    if not registros:
-        raise ValueError("Nenhum dado encontrado nas abas mensais.")
+    # Para cada mês, extrai o somatório da coluna 'Quantidade'
+    for mes in meses:
+        if mes in abas:
+            df = pd.read_excel(caminho_arquivo, sheet_name=mes, skiprows=6, header=None)
+            # A coluna de índice 2 contém os valores da Quantidade
+            quantidade = pd.to_numeric(df.iloc[:, 2], errors="coerce").dropna()
+            total = int(quantidade.sum())
+        else:
+            total = 0
+        fluxos_publicados.append(total)
 
-    df = pd.DataFrame(registros)
+    # Gera o gráfico de linha
+    fig, ax = plt.subplots(figsize=(10, 5))
 
-    # Remover aba antiga de gráficos
+    plt.plot(ordem_meses, fluxos_publicados, marker="o", linestyle="-", color="blue")
+
+    plt.xlabel("Meses")
+    plt.ylabel("Total de Fluxos Publicados")
+    plt.title(f"Evolução Mensal de Fluxos Publicados em {datetime.now().year}")
+    plt.grid(True)
+    plt.yticks(range(0, max(fluxos_publicados) + 50, 50))
+
+    plt.tight_layout()
+
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png')
+    plt.close(fig)
+    buffer.seek(0)
+
+    wb = load_workbook(caminho_arquivo)
     if "Graficos" in wb.sheetnames:
         del wb["Graficos"]
-    aba_graf = wb.create_sheet("Graficos")
+    aba_graficos = wb.create_sheet("Graficos")
+    img = XLImage(buffer)
+    aba_graficos.add_image(img, "A1")
+    wb.save(caminho_arquivo)
 
-    # Criar aba de dados para o gráfico
-    if "Dados para o Gráfico" in wb.sheetnames:
-        del wb["Dados para o Gráfico"]
-    aba_dados = wb.create_sheet("Dados para o Gráfico")
-
-    # Total por mês com todos os meses do ano
-    totais_mes = df.groupby("Mês")["Quantidade"].sum().reindex(ordem_meses, fill_value=0)
-
-    # Escrever dados na aba de dados
-    aba_dados.append(["Mês", "Total"])
-    for mes, total in totais_mes.items():
-        aba_dados.append([mes, total])
-
-    # Determinar intervalo de meses com dados
-    meses_com_dados = totais_mes[totais_mes > 0]
-    if not meses_com_dados.empty:
-        primeiro_indice = ordem_meses.index(meses_com_dados.index[0])
-        ultimo_indice = ordem_meses.index(meses_com_dados.index[-1])
-    else:
-        primeiro_indice = 0
-        ultimo_indice = 11
-
-    # Gráfico de linha
-    chart = LineChart()
-    chart.title = "Total de Fluxos Publicados por Mês"
-    chart.y_axis.title = "Total"
-    chart.x_axis.title = "Mês"
-    chart.y_axis.majorUnit = 50
-    chart.y_axis.minorGridlines = None
-
-    data = Reference(aba_dados, min_col=2, min_row=1 + primeiro_indice + 1, max_row=1 + ultimo_indice + 1)
-    cats = Reference(aba_dados, min_col=1, min_row=1 + primeiro_indice + 1, max_row=1 + ultimo_indice + 1)
-    chart.add_data(data, titles_from_data=False)
-    chart.set_categories(cats)
-
-    # Adicionar rótulos de dados
-    chart.dLbls = DataLabelList()
-    chart.dLbls.showVal = True
-
-    aba_graf.add_chart(chart, "B2")
-
-    wb.save(CAMINHO_PLANILHA_FINAL)
-    print("✅ Aba 'Graficos' e 'Dados para o Gráfico' criadas com sucesso com gráfico de linha ajustado.")
+def gerar_graficos_gerais():
+    gerar_grafico_linha_evolucao_mensal_de_Fluxos_publicados(CAMINHO_PLANILHA_FINAL)
+    print("✅ Aba 'Graficos' e gráfico de linha criados com sucesso.")
 
