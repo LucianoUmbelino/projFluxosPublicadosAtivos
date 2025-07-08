@@ -5,7 +5,7 @@ from tkinter import filedialog
 from pathlib import Path
 from modules.gerar_planilha import gerar_fluxo_mensal
 from modules.gerar_graficos import gerar_graficos_gerais
-from config.settings import CAMINHO_INICIAL
+from config.settings import CAMINHO_INICIAL, CAMINHO_PLANILHA_FINAL
 
 def criar_atalho_na_area_de_trabalho(destino: Path):
     try:
@@ -34,6 +34,10 @@ def validar_pasta_e_planilha():
     arquivos_validos = list(CAMINHO_INICIAL.glob("*Fluxos disponíveis para execução no E-Flow (produção)*.xlsx"))
     if not arquivos_validos:
         print(f"❌ A planilha 'Fluxos disponíveis para execução no E-Flow (produção)' não foi encontrada na pasta '{CAMINHO_INICIAL}'.")
+        sys.exit(1)
+
+    if not CAMINHO_PLANILHA_FINAL.exists():
+        print(f"❌ A planilha de saida 'Fluxos_Publicados_Ativos.xlsx' não foi encontrada na pasta '{CAMINHO_INICIAL}'.")
         sys.exit(1)
 
 def selecionar_arquivo():
