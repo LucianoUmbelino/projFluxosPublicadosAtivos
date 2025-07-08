@@ -1,3 +1,6 @@
+import sys
+import os
+from io import BytesIO
 import pandas as pd
 import matplotlib.pyplot as plt
 from openpyxl import load_workbook
@@ -5,9 +8,10 @@ from openpyxl.drawing.image import Image as XLImage
 import numpy as np
 import math
 import seaborn as sns
-from io import BytesIO
 from datetime import datetime
 from config.settings import CAMINHO_PLANILHA_FINAL
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Mapeamento de nomes completos para siglas
 MESES_SIGLA = {
