@@ -1,5 +1,5 @@
 import sys
-import os
+from pathlib import Path
 from io import BytesIO
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -9,19 +9,29 @@ import numpy as np
 import math
 import seaborn as sns
 from datetime import datetime
-from config.settings import CAMINHO_PLANILHA_FINAL
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Garante que o diretório 'src' esteja no PYTHONPATH
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from src.config.settings import CAMINHO_PLANILHA_FINAL
+
+
 
 # Mapeamento de nomes completos para siglas
-MESES_SIGLA = {
+meses_sigla = {
     "Janeiro": "Jan", "Fevereiro": "Fev", "Março": "Mar", "Abril": "Abr",
     "Maio": "Mai", "Junho": "Jun", "Julho": "Jul", "Agosto": "Ago",
     "Setembro": "Set", "Outubro": "Out", "Novembro": "Nov", "Dezembro": "Dez"
 }
-ORDEM_MESES = list(MESES_SIGLA.keys())
-SIGLAS_MESES = list(MESES_SIGLA.values())
-GOVES_NOME = "GOVES - ESTADO DO ESPIRITO SANTO"
+ordem_meses = list(meses_sigla.keys())
+siglas_meses = list(meses_sigla.values())
+goves_nome = "GOVES - ESTADO DO ESPIRITO SANTO"
+
+IMG_WIDTH_LINHA = 580
+IMG_HEIGHT_LINHA = 420
+IMG_WIDTH_BARRAS = 880
+IMG_HEIGHT_BARRAS = 520
+IMG_WIDTH_HEATMAP = 980
+IMG_HEIGHT_HEATMAP = 820
 
 def gerar_dicionario_fluxos(arquivo_excel):
     resultado = {}
@@ -30,7 +40,7 @@ def gerar_dicionario_fluxos(arquivo_excel):
 
     for nome_aba, df in planilhas.items():
         nome_mes = nome_aba.strip().capitalize()
-        if nome_mes not in ORDEM_MESES:
+        if nome_mes not in ordem_meses:
             continue
 
         if not {'Patriarca', 'Quantidade'}.issubset(df.columns):
@@ -48,12 +58,12 @@ def carregar_dados_setores_goves(caminho_arquivo):
 
     for nome_aba, df in planilhas.items():
         mes = nome_aba.strip().capitalize()
-        if mes not in ORDEM_MESES or 'Patriarca' not in df.columns or 'Setor' not in df.columns or 'Quantidade' not in df.columns:
+        if mes not in ordem_meses or 'Patriarca' not in df.columns or 'Setor' not in df.columns or 'Quantidade' not in df.columns:
             continue
 
         df = df.dropna(subset=['Patriarca', 'Setor', 'Quantidade'])
-        df_goves = df[df['Patriarca'] == GOVES_NOME].copy()
-        df_goves['Mês'] = MESES_SIGLA[mes]
+        df_goves = df[df['Patriarca'] == goves_nome].copy()
+        df_goves['Mês'] = meses_sigla[mes]
         df_completo.append(df_goves[['Setor', 'Quantidade', 'Mês']])
 
     if df_completo:
@@ -61,12 +71,12 @@ def carregar_dados_setores_goves(caminho_arquivo):
     else:
         return pd.DataFrame(columns=['Setor', 'Quantidade', 'Mês'])
 
-def gerar_grafico_linha_evolucao_mensal_de_Fluxos_publicados(caminho_arquivo: str):
+def gerar_grafico_linha_fluxos_mensais(caminho_arquivo: str):
     fluxos_publicados = []
     excel_file = pd.ExcelFile(caminho_arquivo)
     abas = excel_file.sheet_names
 
-    for mes in ORDEM_MESES:
+    for mes in ordem_meses:
         if mes in abas:
             df = pd.read_excel(caminho_arquivo, sheet_name=mes, skiprows=6, header=None)
             quantidade = pd.to_numeric(df.iloc[:, 2], errors="coerce").dropna()
@@ -76,7 +86,7 @@ def gerar_grafico_linha_evolucao_mensal_de_Fluxos_publicados(caminho_arquivo: st
         fluxos_publicados.append(total)
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    plt.plot(SIGLAS_MESES, fluxos_publicados, marker="o", linestyle="-", color="blue")
+    plt.plot(siglas_meses, fluxos_publicados, marker="o", linestyle="-", color="blue")
     plt.xlabel("Meses")
     plt.ylabel("Total de Fluxos Publicados")
     plt.title(f"Evolução Mensal de Fluxos Publicados em {datetime.now().year}")
@@ -94,30 +104,30 @@ def gerar_grafico_linha_evolucao_mensal_de_Fluxos_publicados(caminho_arquivo: st
         del wb["Graficos"]
     aba_graficos = wb.create_sheet("Graficos")
     img = XLImage(buffer)
-    img.width = 580
-    img.height = 420
+    img.width = IMG_WIDTH_LINHA
+    img.height = IMG_HEIGHT_LINHA
     aba_graficos.add_image(img, "A1")
     wb.save(caminho_arquivo)
 
 def gerar_grafico_barras(dados_por_mes):
-    dados_completos = {mes: dados_por_mes.get(mes, {}) for mes in ORDEM_MESES}
-    siglas_meses = [MESES_SIGLA[mes] for mes in ORDEM_MESES]
+    dados_completos = {mes: dados_por_mes.get(mes, {}) for mes in ordem_meses}
+    siglas_meses = [meses_sigla[mes] for mes in ordem_meses]
 
     # Coleta e ordena patriarcas, com GOVES no início
     patriarcas = sorted({p for dados in dados_completos.values() for p in dados})
-    if GOVES_NOME in patriarcas:
-        patriarcas.remove(GOVES_NOME)
-        patriarcas = [GOVES_NOME] + patriarcas
+    if goves_nome in patriarcas:
+        patriarcas.remove(goves_nome)
+        patriarcas = [goves_nome] + patriarcas
 
     n_patriarcas = len(patriarcas)
 
     valores_por_patriarca = {p: [] for p in patriarcas}
-    for mes in ORDEM_MESES:
+    for mes in ordem_meses:
         dados_mes = dados_completos[mes]
         for p in patriarcas:
             valores_por_patriarca[p].append(dados_mes.get(p, 0))
 
-    x = np.arange(len(ORDEM_MESES))
+    x = np.arange(len(ordem_meses))
 
     # Largura das barras proporcional ao número de patriarcas
     bar_width = min(0.9 / max(n_patriarcas, 1), 0.3)
@@ -166,8 +176,8 @@ def gerar_grafico_barras(dados_por_mes):
 
     # Insere a imagem no canto direito (coluna J)
     img = XLImage(buffer)
-    img.width = 880
-    img.height = 520
+    img.width = IMG_WIDTH_BARRAS
+    img.height = IMG_HEIGHT_BARRAS
     aba_graficos.add_image(img, "J1")
 
     wb.save(CAMINHO_PLANILHA_FINAL)
@@ -179,7 +189,7 @@ def gerar_heatmap_setores_por_mes(caminho_arquivo: str):
         return
 
     tabela = df.pivot_table(index='Setor', columns='Mês', values='Quantidade', aggfunc='sum', fill_value=0)
-    tabela = tabela[[sigla for sigla in SIGLAS_MESES if sigla in tabela.columns]]
+    tabela = tabela[[sigla for sigla in siglas_meses if sigla in tabela.columns]]
 
     fig, ax = plt.subplots(figsize=(14, max(6, len(tabela) * 0.4)))
     sns.heatmap(tabela, annot=True, fmt=".0f", cmap="Blues", linewidths=0.5, cbar_kws={'label': 'Publicações'}, ax=ax)
@@ -201,8 +211,8 @@ def gerar_heatmap_setores_por_mes(caminho_arquivo: str):
     aba_graficos = wb["Graficos"] if "Graficos" in wb.sheetnames else wb.create_sheet("Graficos")
 
     img = XLImage(buffer)
-    img.width = 980
-    img.height = 820
+    img.width = IMG_WIDTH_HEATMAP
+    img.height = IMG_HEIGHT_HEATMAP
     aba_graficos.add_image(img, "A28")
 
     wb.save(caminho_arquivo)
@@ -210,7 +220,7 @@ def gerar_heatmap_setores_por_mes(caminho_arquivo: str):
 
 
 def gerar_graficos_gerais():
-    gerar_grafico_linha_evolucao_mensal_de_Fluxos_publicados(CAMINHO_PLANILHA_FINAL)
+    gerar_grafico_linha_fluxos_mensais(CAMINHO_PLANILHA_FINAL)
     print("✅ Aba 'Graficos' e gráfico de linha criados com sucesso.")
 
     dicionario_resultado = gerar_dicionario_fluxos(CAMINHO_PLANILHA_FINAL)
