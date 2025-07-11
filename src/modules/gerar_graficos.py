@@ -14,8 +14,6 @@ from datetime import datetime
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.config.settings import CAMINHO_PLANILHA_FINAL
 
-
-
 # Mapeamento de nomes completos para siglas
 meses_sigla = {
     "Janeiro": "Jan", "Fevereiro": "Fev", "Março": "Mar", "Abril": "Abr",
