@@ -31,6 +31,8 @@ IMG_HEIGHT_BARRAS = 520
 IMG_WIDTH_HEATMAP = 980
 IMG_HEIGHT_HEATMAP = 820
 
+mensagens = []
+
 def gerar_dicionario_fluxos(arquivo_excel):
     resultado = {}
 
@@ -107,6 +109,8 @@ def gerar_grafico_linha_fluxos_mensais(caminho_arquivo: str):
     aba_graficos.add_image(img, "A1")
     wb.save(caminho_arquivo)
 
+    return {"status": "Sucesso Gráfico de Linha", "mensagem": "Gráfico de linha salvo com sucesso na aba 'Graficos'."}
+
 def gerar_grafico_barras(dados_por_mes):
     dados_completos = {mes: dados_por_mes.get(mes, {}) for mes in ordem_meses}
     siglas_meses = [meses_sigla[mes] for mes in ordem_meses]
@@ -180,11 +184,13 @@ def gerar_grafico_barras(dados_por_mes):
 
     wb.save(CAMINHO_PLANILHA_FINAL)
 
+    return {"status": "Sucesso Gráfico de Barras", "mensagem": "Gráfico de barras salvo com sucesso na aba 'Graficos'."}
+
 def gerar_heatmap_setores_por_mes(caminho_arquivo: str):
     df = carregar_dados_setores_goves(caminho_arquivo)
     if df.empty:
-        print("⚠️ Nenhum dado do GOVES encontrado.")
-        return
+        return {"status": "Falha ao gerar o gráfico HeatMap",
+                "mensagem": f"Não foi possivel gerar o gráfico HeatMap, nenhum dado do GOVES encontrado."}
 
     tabela = df.pivot_table(index='Setor', columns='Mês', values='Quantidade', aggfunc='sum', fill_value=0)
     tabela = tabela[[sigla for sigla in siglas_meses if sigla in tabela.columns]]
@@ -214,17 +220,27 @@ def gerar_heatmap_setores_por_mes(caminho_arquivo: str):
     aba_graficos.add_image(img, "A28")
 
     wb.save(caminho_arquivo)
-    print("✅ Heatmap salvo com sucesso na aba 'Graficos' a partir da célula A25.")
-
+    return {"status": f"Sucesso Grafico HeatMap gerado com sucesso",
+            "mensagem": f"Heatmap salvo com sucesso na aba 'Graficos'."}
 
 def gerar_graficos_gerais():
-    gerar_grafico_linha_fluxos_mensais(CAMINHO_PLANILHA_FINAL)
-    print("✅ Aba 'Graficos' e gráfico de linha criados com sucesso.")
+    mensagens = []
 
-    dicionario_resultado = gerar_dicionario_fluxos(CAMINHO_PLANILHA_FINAL)
-    gerar_grafico_barras(dicionario_resultado)
-    print("✅ Aba 'Graficos' - gráfico Barras 'Publicação Mensal por Patriarca' criado com sucesso.")
+    resultado = gerar_grafico_linha_fluxos_mensais(CAMINHO_PLANILHA_FINAL)
+    mensagens.append(resultado)
 
-    gerar_heatmap_setores_por_mes(CAMINHO_PLANILHA_FINAL)
-    print("✅ Aba 'Graficos' - gráfico HeatMap Setores por Mes' criado com sucesso.")
+    resultado = gerar_grafico_barras(gerar_dicionario_fluxos(CAMINHO_PLANILHA_FINAL))
+    mensagens.append(resultado)
+
+    resultado = gerar_heatmap_setores_por_mes(CAMINHO_PLANILHA_FINAL)
+    mensagens.append(resultado)
+
+    status = resultado["status"]
+    if "falha" in status.lower():
+       return mensagens
+
+    mensagens.append({
+        "status": "Sucesso na Geração dos Gráficos", "mensagem": "Todos os gráficos foram gerados com sucesso na aba 'Gráficos'."})
+
+    return mensagens
 

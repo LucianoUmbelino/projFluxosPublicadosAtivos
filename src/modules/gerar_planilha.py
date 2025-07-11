@@ -14,12 +14,14 @@ from src.config.settings import CAMINHO_PLANILHA_FINAL, ABA_MODELO
 from src.utils.excel_helpers import ajustar_largura_colunas
 
 
-def padronizar_coluna_nome(df: pd.DataFrame) -> pd.DataFrame:
+def padronizar_coluna_nome(mes: str, df: pd.DataFrame) -> pd.DataFrame:
     if "Nome" in df.columns:
         return df
+
     if "Nomes" in df.columns:
         return df.rename(columns={"Nomes": "Nome"})
-    raise ValueError("A planilha deve conter a coluna 'Nome' ou 'Nomes'.")
+
+    return {"status": f"Falha no processamento do mes {mes}", "mensagem": f"A planilha com as informações do mes de {mes} deve conter a coluna 'Nome' ou 'Nomes'."}
 
 
 def limpar_dados_antigos(aba: Worksheet, linha_inicial: int = 7, col_final: int = 5):
@@ -34,11 +36,14 @@ def gerar_fluxo_mensal(mes: str, caminho_fluxos: str):
 
     # === LEITURA DA PLANILHA DE FLUXOS ===
     df = pd.read_excel(caminho_fluxos, engine="openpyxl")
-    df = padronizar_coluna_nome(df)
+    df = padronizar_coluna_nome(mes, df)
+    if isinstance(df, dict):  # Se retornou erro
+        return df
 
     colunas_necessarias = {"Patriarca", "Órgão", "Nome"}
     if not colunas_necessarias.issubset(set(df.columns)):
-        raise ValueError(f"A planilha deve conter as colunas: {', '.join(colunas_necessarias)}.")
+        return {"status": f"Falha no processamento do mes {mes}",
+                "mensagem": f"A planilha deve conter as colunas: {', '.join(colunas_necessarias)}."}
 
     df = df.dropna(subset=colunas_necessarias)
 
@@ -54,7 +59,8 @@ def gerar_fluxo_mensal(mes: str, caminho_fluxos: str):
     wb = load_workbook(CAMINHO_PLANILHA_FINAL)
 
     if ABA_MODELO not in wb.sheetnames:
-        raise ValueError(f"A planilha deve conter uma aba chamada '{ABA_MODELO}' como modelo.")
+        return {"status": f"Falha no processamento do mes {mes}",
+                "mensagem": f"A planilha deve conter uma aba chamada '{ABA_MODELO}' como modelo."}
 
     if mes in wb.sheetnames:
         del wb[mes]
@@ -109,4 +115,5 @@ def gerar_fluxo_mensal(mes: str, caminho_fluxos: str):
 
     # Salva
     wb.save(CAMINHO_PLANILHA_FINAL)
-    print(f"✅ Aba '{mes}' criada/atualizada com sucesso no arquivo:\n{CAMINHO_PLANILHA_FINAL}")
+    return {"status": f"Sucesso no processamento do mes {mes}",
+            "mensagem": f"Aba '{mes}' criada/atualizada com sucesso no arquivo:\n{CAMINHO_PLANILHA_FINAL}."}
