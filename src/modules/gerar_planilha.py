@@ -32,88 +32,96 @@ def limpar_dados_antigos(aba: Worksheet, linha_inicial: int = 7, col_final: int 
 
 
 def gerar_fluxo_mensal(mes: str, caminho_fluxos: str):
-    caminho_fluxos = Path(caminho_fluxos)
+    try:
 
-    # === LEITURA DA PLANILHA DE FLUXOS ===
-    df = pd.read_excel(caminho_fluxos, engine="openpyxl")
-    df = padronizar_coluna_nome(mes, df)
-    if isinstance(df, dict):  # Se retornou erro
-        return df
+            caminho_fluxos = Path(caminho_fluxos)
 
-    colunas_necessarias = {"Patriarca", "Órgão", "Nome"}
-    if not colunas_necessarias.issubset(set(df.columns)):
-        return {"status": f"Falha no processamento do mes {mes}",
-                "mensagem": f"A planilha deve conter as colunas: {', '.join(colunas_necessarias)}."}
+            # === LEITURA DA PLANILHA DE FLUXOS ===
+            df = pd.read_excel(caminho_fluxos, engine="openpyxl")
+            df = padronizar_coluna_nome(mes, df)
+            if isinstance(df, dict):  # Se retornou erro
+                return df
 
-    df = df.dropna(subset=colunas_necessarias)
+            colunas_necessarias = {"Patriarca", "Órgão", "Nome"}
+            if not colunas_necessarias.issubset(set(df.columns)):
+                return {"status": f"Falha no processamento do mes {mes}",
+                        "mensagem": f"A planilha deve conter as colunas: {', '.join(colunas_necessarias)}."}
 
-    df_resumo = (
-        df.groupby(["Patriarca", "Órgão"])["Nome"]
-        .count()
-        .reset_index()
-        .rename(columns={"Órgão": "Setor", "Nome": "Quantidade"})
-        .sort_values(by=["Patriarca", "Setor"])
-    )
+            df = df.dropna(subset=colunas_necessarias)
 
-    # === ABRIR A PLANILHA DE DESTINO ===
-    wb = load_workbook(CAMINHO_PLANILHA_FINAL)
+            df_resumo = (
+                df.groupby(["Patriarca", "Órgão"])["Nome"]
+                .count()
+                .reset_index()
+                .rename(columns={"Órgão": "Setor", "Nome": "Quantidade"})
+                .sort_values(by=["Patriarca", "Setor"])
+            )
 
-    if ABA_MODELO not in wb.sheetnames:
-        return {"status": f"Falha no processamento do mes {mes}",
-                "mensagem": f"A planilha deve conter uma aba chamada '{ABA_MODELO}' como modelo."}
+            # === ABRIR A PLANILHA DE DESTINO ===
+            wb = load_workbook(CAMINHO_PLANILHA_FINAL)
 
-    if mes in wb.sheetnames:
-        del wb[mes]
+            if ABA_MODELO not in wb.sheetnames:
+                return {"status": f"Falha no processamento do mes {mes}",
+                        "mensagem": f"A planilha deve conter uma aba chamada '{ABA_MODELO}' como modelo."}
 
-    aba_modelo: Worksheet = wb[ABA_MODELO]
-    nova_aba: Worksheet = wb.copy_worksheet(aba_modelo)
-    nova_aba.title = mes
+            if mes in wb.sheetnames:
+                del wb[mes]
 
-    # Inserir nova aba antes da aba "Graficos", se existir
-    if "Graficos" in wb.sheetnames:
-        idx_graficos = wb.sheetnames.index("Graficos")
-        wb.remove(nova_aba)
-        wb._add_sheet(nova_aba, index=idx_graficos)  # Ainda é protegido, mas mais seguro que _sheets
+            aba_modelo: Worksheet = wb[ABA_MODELO]
+            nova_aba: Worksheet = wb.copy_worksheet(aba_modelo)
+            nova_aba.title = mes
 
-    # Atualiza cabeçalhos
-    nova_aba["A4"] = f"Contagem de Fluxos Publicados e Ativos por Setor - Mês {mes}"
-    nova_aba["A5"] = f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-    nova_aba["A6"] = "Patriarca"
-    nova_aba["B6"] = "Setor"
-    nova_aba["C6"] = "Quantidade"
-    nova_aba["E6"] = "Total"
+            # Inserir nova aba antes da aba "Graficos", se existir
+            if "Graficos" in wb.sheetnames:
+                idx_graficos = wb.sheetnames.index("Graficos")
+                wb.remove(nova_aba)
+                wb._add_sheet(nova_aba, index=idx_graficos)  # Ainda é protegido, mas mais seguro que _sheets
 
-    # Remove dados anteriores
-    limpar_dados_antigos(nova_aba)
+            # Atualiza cabeçalhos
+            nova_aba["A4"] = f"Contagem de Fluxos Publicados e Ativos por Setor - Mês {mes}"
+            nova_aba["A5"] = f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+            nova_aba["A6"] = "Patriarca"
+            nova_aba["B6"] = "Setor"
+            nova_aba["C6"] = "Quantidade"
+            nova_aba["E6"] = "Total"
 
-    # Estilos base
-    fill_branco = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
-    fill_azul = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
-    alinhamento_esquerda = Alignment(horizontal="left")
+            # Remove dados anteriores
+            limpar_dados_antigos(nova_aba)
 
-    # Preenche dados a partir da linha 7
-    linha = 7
-    for i, (_, row) in enumerate(df_resumo.iterrows()):
-        cor = fill_branco if i % 2 == 0 else fill_azul
-        nova_aba[f"A{linha}"] = row["Patriarca"]
-        nova_aba[f"B{linha}"] = row["Setor"]
-        nova_aba[f"C{linha}"] = row["Quantidade"]
+            # Estilos base
+            fill_branco = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+            fill_azul = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+            alinhamento_esquerda = Alignment(horizontal="left")
 
-        for col in ["A", "B", "C"]:
-            cell = nova_aba[f"{col}{linha}"]
-            cell.fill = cor
-            if col == "B":
-                cell.alignment = alinhamento_esquerda
+            # Preenche dados a partir da linha 7
+            linha = 7
+            for i, (_, row) in enumerate(df_resumo.iterrows()):
+                cor = fill_branco if i % 2 == 0 else fill_azul
+                nova_aba[f"A{linha}"] = row["Patriarca"]
+                nova_aba[f"B{linha}"] = row["Setor"]
+                nova_aba[f"C{linha}"] = row["Quantidade"]
 
-        linha += 1
+                for col in ["A", "B", "C"]:
+                    cell = nova_aba[f"{col}{linha}"]
+                    cell.fill = cor
+                    if col == "B":
+                        cell.alignment = alinhamento_esquerda
 
-    # Soma total na coluna E
-    nova_aba["E7"] = f"=SUM(C7:C{linha-1})"
+                linha += 1
 
-    # Ajusta largura das colunas
-    ajustar_largura_colunas(nova_aba, colunas=["A", "B", "C"])
+            # Soma total na coluna E
+            nova_aba["E7"] = f"=SUM(C7:C{linha-1})"
 
-    # Salva
-    wb.save(CAMINHO_PLANILHA_FINAL)
-    return {"status": f"Sucesso no processamento do mes {mes}",
-            "mensagem": f"Aba '{mes}' criada/atualizada com sucesso no arquivo:\n{CAMINHO_PLANILHA_FINAL}."}
+            # Ajusta largura das colunas
+            ajustar_largura_colunas(nova_aba, colunas=["A", "B", "C"])
+
+            # Salva
+            wb.save(CAMINHO_PLANILHA_FINAL)
+            return {"status": f"Sucesso no processamento do mes {mes}",
+                    "mensagem": f"Aba de '{mes}' criada/atualizada com sucesso no arquivo:\n{CAMINHO_PLANILHA_FINAL}."}
+
+    except Exception as e:
+        return {
+            "status": f"Falha no processamento do mes {mes}",
+            "mensagem": f"Ocorreu um erro inesperado: {str(e)}"
+        }
