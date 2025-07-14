@@ -13,9 +13,15 @@ from src.config.settings import CAMINHO_INICIAL, CAMINHO_PLANILHA_FINAL
 from src.utils.path_helpers import resource_path
 
 import pythoncom
+import win32com.client
 from win32com.client import Dispatch
 
 mensagens = []
+
+def minimizar_todas_janelas():
+    shell = win32com.client.Dispatch("Shell.Application")
+    shell.MinimizeAll()
+
 
 def criar_atalho_na_area_de_trabalho(destino: Path):
     try:
@@ -72,6 +78,7 @@ def exibe_mensagem_terminal(titulo, msg: str):
     janela_msgs.destroy()
 
 def main():
+    minimizar_todas_janelas()
     validar_pasta_e_planilha()
 
     meses_validos = [
