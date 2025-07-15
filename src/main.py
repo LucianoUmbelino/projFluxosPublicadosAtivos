@@ -2,21 +2,20 @@ import os
 import sys
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
-from tkinter import messagebox
-from tkinter import simpledialog
+from tkinter import filedialog, messagebox, simpledialog
 
-# Importações dos módulos do projeto
+# Módulos do projeto
 from src.modules.gerar_planilha import gerar_fluxo_mensal
 from src.modules.gerar_graficos import gerar_graficos_gerais
 from src.config.settings import CAMINHO_INICIAL, CAMINHO_PLANILHA_FINAL
 from src.utils.path_helpers import resource_path
+from src.utils.logger_helper import LoggerFluxo
 
-import pythoncom
 import win32com.client
 from win32com.client import Dispatch
 
-mensagens = []
+logger = LoggerFluxo()
+
 
 def minimizar_todas_janelas():
     shell = win32com.client.Dispatch("Shell.Application")
@@ -33,29 +32,41 @@ def criar_atalho_na_area_de_trabalho(destino: Path):
         shortcut.Targetpath = str(destino)
         shortcut.WorkingDirectory = str(destino)
 
-        # Define o ícone do atalho usando o caminho empacotado
         icone = resource_path('assets/images/Logo_GPP_Azul-64X64.ico')
         shortcut.IconLocation = str(icone)
 
         shortcut.save()
-        mensagens.append(f"Atalho criado na área de trabalho: {atalho}" + "\n")
+        logger.info(f"Atalho criado na área de trabalho: {atalho}")
     except Exception as e:
-        mensagens.append(f"Não foi possível criar o atalho na área de trabalho: {e}" + "\n")
+        logger.error(f"Não foi possível criar o atalho na área de trabalho: {e}")
+
 
 def validar_pasta_e_planilha():
-    if not CAMINHO_INICIAL.exists():
-        mensagens.append(f"Pasta '{CAMINHO_INICIAL}' não encontrada. Criando..." + "\n")
-        CAMINHO_INICIAL.mkdir(parents=True, exist_ok=True)
-        criar_atalho_na_area_de_trabalho(CAMINHO_INICIAL)
+    try:
+        if not CAMINHO_INICIAL.exists():
+            logger.warn(f"Pasta '{CAMINHO_INICIAL}' não encontrada. Criando...")
+            CAMINHO_INICIAL.mkdir(parents=True, exist_ok=True)
+            criar_atalho_na_area_de_trabalho(CAMINHO_INICIAL)
 
-    arquivos_validos = list(CAMINHO_INICIAL.glob("*Fluxos disponíveis para execução no E-Flow (produção)*.xlsx"))
-    if not arquivos_validos:
-        mensagens.append(f"A planilha 'Fluxos disponíveis para execução no E-Flow (produção)' não foi encontrada na pasta '{CAMINHO_INICIAL}'." + "\n")
+        arquivos_validos = list(CAMINHO_INICIAL.glob("*Fluxos disponíveis para execução no E-Flow (produção)*.xlsx"))
+        if not arquivos_validos:
+            logger.error(f"A planilha 'Fluxos disponíveis para execução no E-Flow (produção)' não foi encontrada na pasta '{CAMINHO_INICIAL}'.")
+            logger.mostrar_mensagem("Erro na Validação")
+            # logger.salvar_em_arquivo(Path("fluxo_execucao.log"))
+            sys.exit(1)
+
+        if not CAMINHO_PLANILHA_FINAL.exists():
+            logger.error(f"A planilha de saída 'Fluxos_Publicados_Ativos.xlsx' não foi encontrada na pasta '{CAMINHO_INICIAL}'.")
+            logger.mostrar_mensagem("Erro na Validação")
+            # logger.salvar_em_arquivo(Path("fluxo_execucao.log"))
+            sys.exit(1)
+
+    except Exception as e:
+        logger.error(f"Erro ao validar pasta e planilhas: {e}")
+        logger.mostrar_mensagem("Erro na Validação")
+        # logger.salvar_em_arquivo(Path("fluxo_execucao.log"))
         sys.exit(1)
 
-    if not CAMINHO_PLANILHA_FINAL.exists():
-        mensagens.append(f"A planilha de saída 'Fluxos_Publicados_Ativos.xlsx' não foi encontrada na pasta '{CAMINHO_INICIAL}'." + "\n")
-        sys.exit(1)
 
 def selecionar_arquivo():
     root = tk.Tk()
@@ -69,13 +80,6 @@ def selecionar_arquivo():
     root.destroy()
     return caminho
 
-def exibe_mensagem_terminal(titulo, msg: str):
-    janela_msgs = tk.Tk()
-    janela_msgs.withdraw()
-
-    messagebox.showinfo(titulo, msg)
-
-    janela_msgs.destroy()
 
 def main():
     minimizar_todas_janelas()
@@ -87,8 +91,7 @@ def main():
     ]
 
     msg_mes = tk.Tk()
-    msg_mes.withdraw()  # Esconde a janela principal
-
+    msg_mes.withdraw()
     mes = simpledialog.askstring("Seleção do Mês de Processamento", "Informe o mês a ser processado (ex: Junho):")
     msg_mes.destroy()
 
@@ -96,23 +99,26 @@ def main():
         mes = mes.strip().capitalize()
 
     if mes not in meses_validos:
-        exibe_mensagem_terminal("Parâmetro Inválido","Mês inválido. Por favor, digite o nome completo de um mês válido.")
+        logger.error("Mês inválido. Por favor, digite o nome completo de um mês válido.")
+        logger.mostrar_mensagem("Parâmetro Inválido")
         return
 
     caminho_entrada = selecionar_arquivo()
 
     if not caminho_entrada:
-        exibe_mensagem_terminal("Arquivo não encontrado","Nenhum arquivo de Fluxos Publicados selecionado.")
+        logger.warn("Nenhum arquivo de Fluxos Publicados selecionado.")
+        logger.mostrar_mensagem("Arquivo não encontrado")
         return
 
     resultado_fluxo = gerar_fluxo_mensal(mes, caminho_entrada)
     if isinstance(resultado_fluxo, dict):
         status = resultado_fluxo.get("status", "").strip()
         mensagem = resultado_fluxo.get("mensagem", "").strip()
-        mensagens.append(f"{status}\n{mensagem}\n")
+        logger.info(status)
+        logger.info(mensagem)
 
         if "falha" in status.lower():
-            exibe_mensagem_terminal("Falha no Processamento", "\n".join(mensagens))
+            logger.mostrar_mensagem("Falha no Processamento")
             return
 
     resultado_graficos = gerar_graficos_gerais()
@@ -121,17 +127,18 @@ def main():
         for resultado in resultado_graficos:
             if isinstance(resultado, dict):
                 status = resultado.get("status", "").lower()
-                mensagem = resultado.get("mensagem", "") + "\n"
-                mensagens.append(mensagem)
+                mensagem = resultado.get("mensagem", "")
+                logger.info(mensagem)
                 if "falha" in status:
                     houve_falha = True
 
         if houve_falha:
-            exibe_mensagem_terminal("Falha no Processamento", "\n".join(mensagens))
+            logger.mostrar_mensagem("Falha no Processamento")
             return
 
-    mensagens.append("Sucesso no Processamento" + "\n" + "Processamento finalizado com sucesso.\n")
-    exibe_mensagem_terminal("Resumo do Processamento", "\n".join(mensagens))
+    logger.info("Processamento finalizado com sucesso.")
+    logger.mostrar_mensagem("Resumo do Processamento")
+    # logger.salvar_em_arquivo(Path("fluxo_execucao.log"))
 
 
 if __name__ == "__main__":
