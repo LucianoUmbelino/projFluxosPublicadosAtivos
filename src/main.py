@@ -32,7 +32,7 @@ def criar_atalho_na_area_de_trabalho(destino: Path):
         shortcut.Targetpath = str(destino)
         shortcut.WorkingDirectory = str(destino)
 
-        icone = resource_path('assets/images/Logo_GPP_Azul-64X64.ico')
+        icone = resource_path('assets/images/FolderCheck.ico')
         shortcut.IconLocation = str(icone)
 
         shortcut.save()
