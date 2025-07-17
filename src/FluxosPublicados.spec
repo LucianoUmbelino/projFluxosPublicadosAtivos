@@ -8,6 +8,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('assets/images/Logo_GPP_Azul-64X64.ico', 'assets/images'),
+        ('assets/images/FolderCheck.ico', 'assets/images'),
     ],
     hiddenimports=[
         'matplotlib',
